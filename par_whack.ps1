@@ -1,43 +1,40 @@
 # Set the root directory to start the search
 $rootDirectory = "\\smb-101.storage.ausps.org\des_library$\Library\"
+$csvPath = "$env:USERPROFILE\Desktop\par_clean.csv"
 
-# Create an array to hold the results for CSV export
-$results = @()
+# Get all *.*.par files, rename them, and collect the results.
+# The -PassThru parameter on Rename-Item outputs the renamed file object.
+# The results of the loop are directly assigned to the $renamedFiles variable.
+$renamedFiles = Get-ChildItem -Path $rootDirectory -Recurse -Filter "*.*.par" | ForEach-Object {
+    $originalPath = $_.FullName
+    # Use -replace on the base name of the file for a cleaner new name
+    $newName = $_.Name -replace '\.par$', ''
 
-# Get all *.*.par files recursively in the directory
-Get-ChildItem -Path $rootDirectory -Recurse -Filter "*.*.par" | ForEach-Object {
-    # Generate the new filename by removing the .par extension
-    $newName = $_.FullName -replace '\.par$', ''
+    try {
+        # Rename the item and pass the resulting object down the pipeline
+        Rename-Item -Path $originalPath -NewName $newName -ErrorAction Stop -PassThru
 
-    # Rename the file
-    Rename-Item -Path $_.FullName -NewName $newName
-
-    # Add the old and new filenames to the results array
-    $results += [PSCustomObject]@{
-        old_filename = $_.FullName
-        new_filename = $newName
+        # Output progress to the console
+        Write-Host "SUCCESS: Renamed '$originalPath' to '$newName'"
     }
-
-    # Output the renamed files to the console
-    Write-Host "Renamed: $($_.FullName) to $newName"
-	
-	catch {
-        # Handle any errors and display the error message
-        Write-Host "Error renaming file: $($_.FullName)"
-        Write-Host "Error Message: $($_.Exception.Message)"
-        
-        # Pause the script to allow the user to see the error
-        Read-Host -Prompt "Press Enter to continue after the error"
+    catch {
+        # Handle any errors for the specific file and display the message
+        Write-Warning "ERROR: Failed to rename '$originalPath'. Message: $($_.Exception.Message)"
     }
 }
 
-# Check if the $results array contains any data
-if ($results.Count -gt 0) {
-    # Export the results array to a CSV file
-    $csvPath = "$env:USERPROFILE\Desktop\par_clean.csv"
-    $results | Export-Csv -Path $csvPath -NoTypeInformation
+# Check if any files were successfully renamed before creating the CSV
+if ($renamedFiles) {
+    # Create a custom report from the renamed file objects
+    $report = $renamedFiles | Select-Object @{Name='old_filename'; Expression={$_.FullName.Replace($_.Name, "$($_.Name).par")}}, @{Name='new_filename'; Expression={$_.FullName}}
 
-    Write-Host "CSV export completed: $csvPath"
+    # Export the report to a CSV file
+    $report | Export-Csv -Path $csvPath -NoTypeInformation
+
+    Write-Host "`nCSV export completed: $csvPath"
 } else {
-    Write-Host "No files were renamed. No CSV was generated."
+    Write-Host "`nNo files were renamed or found. No CSV was generated."
 }
+
+# Optional: Pause at the end
+Read-Host -Prompt "Script finished. Press Enter to exit"
